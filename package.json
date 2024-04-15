@@ -1,0 +1,37 @@
+{
+  "name": "bearmq",
+  "version": "0.1.0",
+  "author": "tlonny",
+  "main": "build/index.js",
+  "types": "build/index.d.ts",
+  "scripts": {
+    "lint": "bun run eslint",
+    "typecheck": "bun run tsc --noEmit",
+    "bump": "bun run script/bump.ts",
+    "build": "bun run script/build.ts"
+  },
+  "devDependencies": {
+    "@stylistic/eslint-plugin-ts": "^2.12.1",
+    "@types/bun": "latest",
+    "@types/node": "^20.12.7",
+    "@types/pg": "^8.11.5",
+    "@typescript-eslint/eslint-plugin": "^8.18.1",
+    "@typescript-eslint/parser": "^8.18.1",
+    "bun-plugin-dts": "^0.2.3",
+    "eslint": "^9.17.0",
+    "kysely-codegen": "^0.15.0",
+    "typescript": "^5.4.5"
+  },
+  "description": "A lightweight postgres-backed job queue",
+  "files": [
+    "build"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "peerDependencies": {
+    "pg": "^8.0.0"
+  },
+  "dependencies": {
+    "kysely": "^0.27.4"
+  }
+}
