@@ -1,5 +1,7 @@
 # BearMQ
 
+![ci](https://github.com/tlonny/bearmq/actions/workflows/release.yml/badge.svg)
+
 A lightweight, configurable job queue backed by **Postgres**, offering an alternative to the redis-backed `bullmq`.
 
 ### Core Features:
