@@ -7,7 +7,7 @@
   "scripts": {
     "lint": "bun run eslint",
     "typecheck": "bun run tsc --noEmit",
-    "bump": "bun run script/bump.ts",
+    "setver": "bun run script/setver.ts",
     "build": "bun run script/build.ts"
   },
   "devDependencies": {
