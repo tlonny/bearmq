@@ -9,7 +9,9 @@ version[version.length - 1] += 1
 pkg.version = version.join(".")
 await Bun.write(pkgFile, JSON.stringify(pkg, null, 2))
 
+const fetchLogs = Bun.spawn(["git", "log", "-1", "--pretty=%B"])
+const commitMessage = await new Response(fetchLogs.stdout).text()
 
 await Bun.spawn(["git", "add", "package.json"]).exited
 await Bun.spawn(["git", "commit", "-m", `Bump version to: ${pkg.version} [skip ci]`]).exited
-await Bun.spawn(["git", "tag", `v${pkg.version}`]).exited
+await Bun.spawn(["git", "tag", `v${pkg.version}`, "-m", commitMessage]).exited
