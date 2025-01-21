@@ -227,6 +227,7 @@ const jobDefinition = new JobDefinition({
 await jobDefinition.enqueue(payload, { delaySecs: 30 })
 ```
 
+
 ### Retries
 
 By default, a job will only be attempted once. Modify this behavior using `numAttempts: number` to specify the number of attempts, and `timeoutSecs: number` (default: `300`) to specify how long workers should wait before retrying failed jobs. Specify both parameters in the job definition constructor _or_ as a one-time override in the `enqueue` function:
@@ -313,6 +314,16 @@ Set `jobGroupUnlockSecs` in the context constructor to specify a maximum time a 
 
 When setting this value (default is 3 hours), ensure it's high enough to prevent unlocking during long-running job processing. If a job group unlocks while processing, another job from the same group could start processing simultaneously.
 
+### Explicit Failures / Job Metadata
+
+The Job Definition work function accepts the typed payload as its first argument and a `Metadata` object as its second. This metadata object has the following properties:
+  
+  - `jobId : string`
+  - `jobGroup : string`
+  - `markAsFailed: () => void`
+
+The default behaviour of BearMQ is to mark any job as successful if an error is not thrown. However, there may be instances where we don't want to throw an error, but still would like to mark the job as failed (for retry purposes). We can do this by simply calling: `metadata.markAsFailed()` somewhere within the job.
+
 ### Events
 
 BearMQ provides a rich set of events. Subscribe to them using `Context#addEventHandler` with a custom event handler. Available events include:
@@ -323,7 +334,7 @@ BearMQ provides a rich set of events. Subscribe to them using `Context#addEventH
 | `WORKER_JOB_DEQUEUE` | A worker has dequeued a job for processing |
 | `WORKER_JOB_EXPIRE` | A dequeued job has run out of attempts and will now be finalized |
 | `WORKER_JOB_RUN` | A job has started to run on a worker |
-| `WORKER_JOB_RUN_ERROR` | A job threw an error during processing |
+| `WORKER_JOB_RUN_FAILED` | A job failed during processing |
 | `WORKER_JOB_RUN_SUCCESS` | A job was successfully processed and was subsequently finalized |
 | `ORCHESTRATOR_JOB_SCHEDULE` | A repeating job is due to be enqueued |
 | `ORCHESTRATOR_JOB_DELETE` | A finalized job was permanently deleted |

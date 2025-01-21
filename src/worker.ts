@@ -116,18 +116,27 @@ export class Worker {
                     throw new Error(`Job definition with name: \"${row.name}\" not found`)
                 }
 
-                try {
-                    this.context.handleEvent({
-                        eventType: "WORKER_JOB_RUN",
-                        jobId: row.id,
-                        jobName: row.name
-                    })
+                this.context.handleEvent({
+                    eventType: "WORKER_JOB_RUN",
+                    jobId: row.id,
+                    jobName: row.name
+                })
 
+                let isSuccess = true
+                let error: any = null
+
+                try {
                     await jobDefinition.run(row.payload, { 
                         jobId: row.id, 
                         jobGroup: row.jobGroupId,
+                        markAsFailed: () => { isSuccess = false }
                     })
+                } catch (err) {
+                    isSuccess = false
+                    error = err
+                }
 
+                if(isSuccess) {
                     await this.context.database
                         .updateTable("job")
                         .where("id", "=", row.id)
@@ -142,14 +151,7 @@ export class Worker {
                         jobId: row.id,
                         jobName: row.name
                     })
-                } catch(e) {
-                    this.context.handleEvent({
-                        eventType: "WORKER_JOB_RUN_ERROR",
-                        jobId: row.id,
-                        jobName: row.name,
-                        error: e,
-                    })
-
+                } else {
                     await this.context.database
                         .updateTable("job")
                         .where("job.id", "=", row.id)
@@ -158,6 +160,13 @@ export class Worker {
                             "numAttempts": row.numAttempts - 1,
                         })
                         .execute()
+
+                    this.context.handleEvent({
+                        eventType: "WORKER_JOB_RUN_FAILED",
+                        jobId: row.id,
+                        jobName: row.name,
+                        error: error,
+                    })
                 }
             } finally {
                 await this.context.database

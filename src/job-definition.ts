@@ -5,6 +5,7 @@ import type { Context } from "./context"
 type Metadata = {
     jobId : string
     jobGroup : string
+    markAsFailed : () => void
 }
 
 type EnqueueParams = {
