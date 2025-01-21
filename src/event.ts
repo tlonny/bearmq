@@ -28,8 +28,8 @@ export type WorkerJobRunSuccess = {
     jobName: string
 }
 
-export type WorkerJobRunError = {
-    eventType : "WORKER_JOB_RUN_ERROR",
+export type WorkerJobRunFailed = {
+    eventType : "WORKER_JOB_RUN_FAILED",
     jobId: string
     error : any
     jobName: string
@@ -51,6 +51,6 @@ export type BearEvent =
     | WorkerJobExpire
     | WorkerJobRun
     | WorkerJobRunSuccess
-    | WorkerJobRunError
+    | WorkerJobRunFailed
     | OrchestratorJobSchedule
     | OrchestratorJobDelete
