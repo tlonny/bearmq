@@ -25,7 +25,7 @@ const defaultTimeoutSecs = 60 * 5
 const defaultNumAttempts = 1
 const defaultDelaySecs = 0
 
-export class JobDefinition<T = null> {
+export class JobDefinition<T> {
     private readonly context : Context
 
     readonly name : string
