@@ -105,10 +105,11 @@ export class JobDefinition<T> {
                 .returning(["numRefs"])
                 .execute()
 
-            const jobId = await database
+            const jobId = randomUUID()
+            await database
                 .insertInto("job")
                 .values({
-                    id: randomUUID(),
+                    id: jobId,
                     jobGroupId: jobGroup,
                     name: this.name,
                     channel: channel,
@@ -120,9 +121,7 @@ export class JobDefinition<T> {
                     createdAt: sql`NOW()`,
                     availableAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 second'`,
                 })
-                .returning("id")
-                .executeTakeFirstOrThrow()
-                .then(row => row.id)
+                .execute()
 
             this.context.handleEvent({
                 eventType: "JOB_DEFINITION_JOB_ENQUEUE",

@@ -2,7 +2,7 @@ export const generateMigrationSql = (schema : string) : string[] => {
     const escapedSchema = schema.replace(/"/g, "\"\"")
     return [
         `CREATE TABLE IF NOT EXISTS "${escapedSchema}"."job_schedule" (
-            "id" TEXT NOT NULL,
+            "id" TEXT PRIMARY KEY,
             "repeat_secs" INTEGER NOT NULL,
             "repeated_at" TIMESTAMP NOT NULL
         )`,
@@ -14,7 +14,7 @@ export const generateMigrationSql = (schema : string) : string[] => {
         )`,
 
         `CREATE TABLE IF NOT EXISTS "${escapedSchema}"."job" (
-            "id" UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            "id" UUID PRIMARY KEY,
             "job_group_id" TEXT NOT NULL,
             "name" TEXT NOT NULL,
             "channel" TEXT,
