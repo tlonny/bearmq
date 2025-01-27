@@ -2,6 +2,7 @@ import { sql } from "kysely"
 import type { Directory } from "@src/orchestrator/directory"
 import { Semaphore } from "@src/core/semaphore"
 import { Timeout } from "@src/core/timeout"
+import { createKyselyWrapper } from "@src/database"
 
 export class JobDeleteModule {
     private readonly directory : Directory
@@ -25,9 +26,14 @@ export class JobDeleteModule {
 
     private async deleteJobs() {
         const context = this.directory.getContext()
+        const database = createKyselyWrapper({
+            pool: context.pool,
+            schema: context.schema
+        })
+
         while(!this.shouldStop) {
 
-            const jobId = await context.database.transaction().execute(async (database) => {
+            const jobId = await database.transaction().execute(async (database) => {
                 const row = await database
                     .selectFrom("job")
                     .innerJoin("jobGroup", "jobGroup.id", "job.jobGroupId")

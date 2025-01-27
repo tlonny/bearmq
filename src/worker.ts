@@ -2,6 +2,7 @@ import { Context } from "./context"
 import { sql } from "kysely"
 import { Semaphore } from "@src/core/semaphore"
 import { Timeout } from "@src/core/timeout"
+import { createKyselyWrapper } from "@src/database"
 
 const defaultPollSecs = 2
 
@@ -30,8 +31,13 @@ export class Worker {
     }
 
     private async process() {
+        const database = createKyselyWrapper({
+            pool: this.context.pool,
+            schema: this.context.schema
+        })
+
         while(!this.shouldStop) {
-            const row = await this.context.database.transaction().execute(async (database) => {
+            const row = await database.transaction().execute(async (database) => {
                 if(this.channels && this.channels.length === 0) {
                     return null
                 }
@@ -94,7 +100,7 @@ export class Worker {
 
             try {
                 if(row.numAttempts <= 0) {
-                    await this.context.database
+                    await database
                         .updateTable("job")
                         .where("id", "=", row.id)
                         .set({
@@ -137,7 +143,7 @@ export class Worker {
                 }
 
                 if(isSuccess) {
-                    await this.context.database
+                    await database
                         .updateTable("job")
                         .where("id", "=", row.id)
                         .set({
@@ -152,7 +158,7 @@ export class Worker {
                         jobName: row.name
                     })
                 } else {
-                    await this.context.database
+                    await database
                         .updateTable("job")
                         .where("job.id", "=", row.id)
                         .set({ 
@@ -169,7 +175,7 @@ export class Worker {
                     })
                 }
             } finally {
-                await this.context.database
+                await database
                     .updateTable("jobGroup")
                     .where("id", "=", row.jobGroupId)
                     .set({ "unlockedAt": sql<Date>`NOW()` })

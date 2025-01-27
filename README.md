@@ -26,10 +26,10 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL })
 const context = new Context({ pool, schema: "_job" })
 
 // Define a "PING" job that echoes its received payload
-const pingJob = new JobDefinition({
+const pingJob = new JobDefinition<{ message : string }>({
     name: "PING",
     context: context,
-    workFunction: async (payload: { message: string }, metadata) => {
+    workFunction: async (payload, metadata) => {
         console.log(`${metadata.jobId} - ${payload.message}`)
     }
 })
@@ -104,12 +104,12 @@ With a functional context in place, we can build out the remaining BearMQ machin
 ```typescript
 import { JobDefinition } from "bearmq"
 
-type JobParams = { foo: string }
+type JobPayload = { foo: string }
 
-const jobDefinition = new JobDefinition<JobParams>({
+const jobDefinition = new JobDefinition<JobPayload>({
     name: "MY_JOB",
     context: context,
-    workFunction: async (payload: JobParams, metadata) => {
+    workFunction: async (payload, metadata) => {
         console.log(payload.foo)
     }
 })
@@ -196,11 +196,11 @@ Make a job definition repeat regularly by including a `repeatSecs: number` param
 import { JobDefinition } from "bearmq"
 import { context } from "./context"
 
-const jobDefinition = new JobDefinition({
+const jobDefinition = new JobDefinition<null>({
     name: "MY_REPEATING_JOB",
     context: context,
     repeatSecs: 60,
-    workFunction: async (payload : null, metadata) => {
+    workFunction: async (payload, metadata) => {
         console.log("hello")
     }
 })
@@ -215,7 +215,7 @@ By default, the orchestrator polls for repeating jobs every 5 seconds. Adjust th
 Defer job execution by at least some period of time by specifying `delaySecs` in either the job definition constructor params _or_ as a one-time override, directly in the `enqueue` function:
 
 ```typescript
-const jobDefinition = new JobDefinition({
+const jobDefinition = new JobDefinition<null>({
     name: "MY_JOB",
     delaySecs: 5,
     workFunction: async (payload, metadata) => {
@@ -233,7 +233,7 @@ await jobDefinition.enqueue(payload, { delaySecs: 30 })
 By default, a job will only be attempted once. Modify this behavior using `numAttempts: number` to specify the number of attempts, and `timeoutSecs: number` (default: `300`) to specify how long workers should wait before retrying failed jobs. Specify both parameters in the job definition constructor _or_ as a one-time override in the `enqueue` function:
 
 ```typescript
-const jobDefinition = new JobDefinition({
+const jobDefinition = new JobDefinition<null>({
     name: "MY_JOB",
     numAttempts: 3,
     timeoutSecs: 60 * 5,
@@ -268,7 +268,7 @@ Here's how to implement channel-based job processing:
 import { JobDefinition, Worker } from "bearmq"
 import { context } from "./context"
 
-const highPriorityJob = new JobDefinition({
+const highPriorityJob = new JobDefinition<null>({
     name: "HIGH_PRIORITY_JOB",
     channel: "HIGH_PRIORITY",
     context: context,
@@ -277,7 +277,7 @@ const highPriorityJob = new JobDefinition({
     }
 })
 
-const lowPriorityJob = new JobDefinition({
+const lowPriorityJob = new JobDefinition<null>({
     name: "LOW_PRIORITY_JOB",
     context: context,
     workFunction: async (payload, metadata) => {
@@ -299,7 +299,7 @@ This setup ensures all three workers process high-priority jobs when available, 
 
 ### Job Groups
 
-Each job belongs to a job group when enqueued. BearMQ processes only one job from a given job group at a time (globally). By default, each enqueued job receives a random `UUIDv4` as its job group, but you can override this by providing a `jobGroupGenerator` function as a parameter to the job definition constructor. This function goes from `TParams => string`. Alternatively, you can provide a one-time override of the `jobGroup` by passing it as an argument in the `enqueue` function:
+Each job belongs to a job group when enqueued. BearMQ processes only one job from a given job group at a time (globally). By default, each enqueued job receives a random `UUIDv4` as its job group, but you can override this by providing a `jobGroupGenerator` function as a parameter to the job definition constructor. This function goes from `TPayload => string`. Alternatively, you can provide a one-time override of the `jobGroup` by passing it as an argument in the `enqueue` function:
 
 ```typescript
 

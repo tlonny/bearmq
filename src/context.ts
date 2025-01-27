@@ -1,8 +1,6 @@
 import type { BearEvent } from "@src/event"
 import { JobDefinition } from "@src/job-definition"
-import { CamelCasePlugin, Kysely, PostgresDialect } from "kysely"
 import { Pool } from "pg"
-import type { DB } from "@src/database"
 
 type BearEventHandler = (event : BearEvent) => void
 
@@ -12,10 +10,9 @@ const defaultJobGroupUnlockSecs = 60 * 60 * 2
 export class Context {
     readonly jobPostFinalizeDeleteSecs : number
     readonly jobGroupUnlockSecs : number
-    readonly database : Kysely<DB>
     readonly schema : string
 
-    private pool : Pool
+    readonly pool : Pool
     private jobDefinitions : { [key: string] : JobDefinition<any> }
     private eventHandlers : BearEventHandler[]
     
@@ -31,10 +28,6 @@ export class Context {
         this.jobGroupUnlockSecs = params.jobGroupUnlockSecs ?? defaultJobGroupUnlockSecs
         this.jobPostFinalizeDeleteSecs = params.jobPostFinalizeDeleteSecs ?? defaultJobPostFinalizeDeleteSecs
         this.jobDefinitions = {}
-        this.database = new Kysely<DB>({
-            dialect: new PostgresDialect({ pool: this.pool }),
-            plugins: [ new CamelCasePlugin() ]
-        }).withSchema(this.schema)
     }
 
     addEventHandler(handler : BearEventHandler) {

@@ -1,4 +1,6 @@
-import type { ColumnType, JSONColumnType } from "kysely"
+import { CamelCasePlugin, PostgresDialect } from "kysely"
+import { Kysely, type ColumnType, type JSONColumnType } from "kysely"
+import type { Pool } from "pg"
 
 type Timestamp = ColumnType<Date, Date, Date>
 
@@ -34,3 +36,11 @@ export interface DB {
     jobGroup: JobGroupTable
     jobSchedule: JobScheduleTable
 }
+
+export const createKyselyWrapper = (params : {
+    pool : Pool, 
+    schema : string
+}) : Kysely<DB> => new Kysely<DB>({
+    dialect: new PostgresDialect({ pool: params.pool }),
+    plugins: [ new CamelCasePlugin() ]
+}).withSchema(params.schema)

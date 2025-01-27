@@ -1,6 +1,7 @@
 import { sql } from "kysely"
 import { randomUUID } from "crypto"
 import type { Context } from "./context"
+import { createKyselyWrapper } from "@src/database"
 
 type Metadata = {
     jobId : string
@@ -68,7 +69,12 @@ export class JobDefinition<T> {
         }
 
         const repeatSecs = this.repeatSecs
-        await this.context.database
+        const database = createKyselyWrapper({
+            pool: this.context.pool,
+            schema: this.context.schema
+        })
+
+        await database
             .insertInto("jobSchedule")
             .values({
                 id: this.name,
@@ -88,7 +94,12 @@ export class JobDefinition<T> {
         const numAttempts = params?.numAttempts ?? this.numAttempts
         const channel = params?.channel ?? this.channel
 
-        return await this.context.database.transaction().execute(async (database) => {
+        const database = createKyselyWrapper({
+            pool: this.context.pool,
+            schema: this.context.schema
+        })
+
+        return await database.transaction().execute(async (database) => {
             await database
                 .insertInto("jobGroup")
                 .values({
