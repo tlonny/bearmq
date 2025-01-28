@@ -17,7 +17,7 @@ export const generateMigrationSql = (schema : string) : string[] => {
             "id" UUID PRIMARY KEY,
             "job_group_id" TEXT NOT NULL,
             "name" TEXT NOT NULL,
-            "channel" TEXT,
+            "channel" TEXT NOT NULL,
             "payload" JSON NOT NULL,
             "num_attempts" INTEGER NOT NULL,
             "timeout_secs" INTEGER NOT NULL,

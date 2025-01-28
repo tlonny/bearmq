@@ -20,7 +20,7 @@ interface JobTable {
     id: string
     jobGroupId: string
     name: string
-    channel: string | null
+    channel: string
     payload: JSONColumnType<any>
     numAttempts: number
     timeoutSecs: number

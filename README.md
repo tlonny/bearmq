@@ -256,11 +256,11 @@ After this time, the orchestrator permanently deletes them from the database, pr
 
 ### Channels
 
-Channels let you partition workers to process different sets of jobs. For example, you might have low-priority and high-priority jobs. You can dedicate workers exclusively to high-priority jobs to ensure they're processed promptly, regardless of low-priority job backlog.
+Channels let you partition workers to exclusively process different sets of jobs. This is useful in scenarios where a large influx of low-priority enqueued jobs might otherwise prevent higher priority jobs from running in a timely fashion.
 
 Job definitions specify their channel using the `channel: string` parameter in the constructor - or as a one-time override, directly in the `enqueue` function.
 
-Workers specify which channels they'll process using the `channels: string[]` parameter in their constructor. Without this parameter, workers can process all jobs.
+Workers specify which channel they'll process using the `channel: string` parameter in their constructor. The default setting for both of these parameters is: `"DEFAULT"`.
 
 Here's how to implement channel-based job processing:
 
@@ -270,7 +270,6 @@ import { context } from "./context"
 
 const highPriorityJob = new JobDefinition<null>({
     name: "HIGH_PRIORITY_JOB",
-    channel: "HIGH_PRIORITY",
     context: context,
     workFunction: async (payload, metadata) => {
        // Do work 
@@ -279,6 +278,7 @@ const highPriorityJob = new JobDefinition<null>({
 
 const lowPriorityJob = new JobDefinition<null>({
     name: "LOW_PRIORITY_JOB",
+    channel: "LOW_PRIORITY"
     context: context,
     workFunction: async (payload, metadata) => {
        // Do work 
@@ -286,16 +286,14 @@ const lowPriorityJob = new JobDefinition<null>({
 })
 
 const workers: Worker[] = [
-    new Worker({ context, channels: ["HIGH_PRIORITY"] }),
     new Worker({ context }),
     new Worker({ context }),
+    new Worker({ context, channel: "LOW_PRIORITY" }),
 ]
 
 // Perform low priority work with high priority on a one-time basis
-await lowPriorityJob.enqueue(null, {channel: "HIGH_PRIORITY" })
+await lowPriorityJob.enqueue(null, {channel: "DEFAULT" })
 ```
-
-This setup ensures all three workers process high-priority jobs when available, with one worker dedicated exclusively to high-priority jobs.
 
 ### Job Groups
 

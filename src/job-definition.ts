@@ -21,6 +21,8 @@ type JobFunction<T> = (params : T, metadata : Metadata) => Promise<void>
 
 type JobGroupGenerator<T> = (params : T) => string
 
+export const DEFAULT_CHANNEL = "DEFAULT"
+
 const defaultJobGroupGenerator = () => randomUUID()
 const defaultTimeoutSecs = 60 * 5
 const defaultNumAttempts = 1
@@ -30,7 +32,7 @@ export class JobDefinition<T> {
     private readonly context : Context
 
     readonly name : string
-    readonly channel : string | null
+    readonly channel : string
     readonly repeatSecs : number | null
 
     readonly numAttempts : number
@@ -55,7 +57,7 @@ export class JobDefinition<T> {
         this.context = params.context
         this.workFunction = params.workFunction
         this.jobGroupGenerator = params.jobGroupGenerator ?? defaultJobGroupGenerator
-        this.channel = params.channel ?? null
+        this.channel = params.channel ?? DEFAULT_CHANNEL
         this.repeatSecs = params.repeatSecs ?? null
         this.numAttempts = params.numAttempts ?? defaultNumAttempts
         this.timeoutSecs = params.timeoutSecs ?? defaultTimeoutSecs

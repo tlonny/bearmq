@@ -3,6 +3,7 @@ import { sql } from "kysely"
 import { Semaphore } from "@src/core/semaphore"
 import { Timeout } from "@src/core/timeout"
 import { createKyselyWrapper } from "@src/database"
+import { DEFAULT_CHANNEL } from "@src/job-definition"
 
 const defaultPollSecs = 2
 
@@ -10,7 +11,7 @@ export class Worker {
     private readonly pollSecs: number
     private readonly semaphore : Semaphore
     private readonly context : Context
-    private readonly channels : string[] | null
+    private readonly channel : string
     private readonly promise : Promise<void>
 
     private shouldStop : boolean
@@ -18,11 +19,11 @@ export class Worker {
 
     constructor(params : {
         context : Context
-        channels?: string[]
+        channel?: string
         pollSecs?: number
     }) {
         this.context = params.context
-        this.channels = params.channels ?? null
+        this.channel = params.channel ?? DEFAULT_CHANNEL
         this.pollSecs = params.pollSecs ?? defaultPollSecs
         this.shouldStop = false
         this.semaphore = new Semaphore(1)
@@ -38,10 +39,6 @@ export class Worker {
 
         while(!this.shouldStop) {
             const row = await database.transaction().execute(async (database) => {
-                if(this.channels && this.channels.length === 0) {
-                    return null
-                }
-
                 const jobNames = this.context
                     .getJobDefinitions()
                     .map(jd => jd.name)
@@ -63,10 +60,7 @@ export class Worker {
                     ])
                     .where("job.finalizedAt", "is", null)
                     .where("job.name", "in", jobNames)
-                    .where(eb => this.channels
-                        ? eb("job.channel", "in", this.channels)
-                        : eb.val(true)
-                    )
+                    .where("job.channel", "=", this.channel)
                     .where("job.availableAt", "<=", sql<Date>`NOW()`)
                     .where("jobGroup.unlockedAt", "<=", sql<Date>`NOW()`)
                     .forUpdate()
