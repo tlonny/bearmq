@@ -29,7 +29,7 @@ export const generateMigrationSql = (schema : string) : string[] => {
             FOREIGN KEY ("job_group_id") REFERENCES "${escapedSchema}"."job_group" ("id")
         )`,
 
-        `CREATE UNIQUE INDEX IF NOT EXISTS "job_group_idx" ON "${escapedSchema}"."job_group" (
+        `CREATE INDEX IF NOT EXISTS "job_group_idx" ON "${escapedSchema}"."job_group" (
             "unlocked_at"
         )`,
 
