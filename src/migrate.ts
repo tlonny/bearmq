@@ -21,7 +21,6 @@ export const generateMigrationSql = (schema : string) : string[] => {
             "payload" JSON NOT NULL,
             "num_attempts" INTEGER NOT NULL,
             "timeout_secs" INTEGER NOT NULL,
-            "delay_secs" INTEGER NOT NULL,
             "is_success" BOOLEAN NOT NULL,
             "created_at" TIMESTAMP NOT NULL,
             "available_at" TIMESTAMP NOT NULL,

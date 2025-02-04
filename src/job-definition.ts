@@ -129,7 +129,6 @@ export class JobDefinition<T> {
                     payload: JSON.stringify(payload),
                     numAttempts: numAttempts,
                     timeoutSecs: timeoutSecs,
-                    delaySecs: delaySecs,
                     isSuccess: false,
                     createdAt: sql`NOW()`,
                     availableAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 second'`,

@@ -7,32 +7,39 @@ export type JobDefinitionJobEnqueue = {
 export type WorkerJobDequeue = {
     eventType : "WORKER_JOB_DEQUEUE"
     jobId: string
+    workerId: string,
     jobName: string
 }
 
 export type WorkerJobExpire = {
     eventType : "WORKER_JOB_EXPIRE",
     jobId: string
+    workerId: string,
     jobName: string
 }
 
 export type WorkerJobRun = {
     eventType : "WORKER_JOB_RUN"
     jobId: string
-    jobName: string
+    jobName: string,
+    workerId: string,
 }
 
 export type WorkerJobRunSuccess = {
     eventType : "WORKER_JOB_RUN_SUCCESS",
     jobId: string
-    jobName: string
+    jobName: string,
+    duration: number,
+    workerId: string
 }
 
 export type WorkerJobRunFailed = {
     eventType : "WORKER_JOB_RUN_FAILED",
     jobId: string
     error : any
-    jobName: string
+    jobName: string,
+    duration: number
+    workerId: string
 }
 
 export type OrchestratorJobSchedule = {

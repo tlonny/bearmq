@@ -24,7 +24,6 @@ interface JobTable {
     payload: JSONColumnType<any>
     numAttempts: number
     timeoutSecs: number
-    delaySecs: number
     isSuccess: boolean
     createdAt: Timestamp
     availableAt: Timestamp

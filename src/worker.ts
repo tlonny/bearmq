@@ -4,6 +4,7 @@ import { Semaphore } from "@src/core/semaphore"
 import { Timeout } from "@src/core/timeout"
 import { createKyselyWrapper } from "@src/database"
 import { DEFAULT_CHANNEL } from "@src/job-definition"
+import { randomUUID } from "crypto"
 
 const defaultPollSecs = 2
 
@@ -16,6 +17,7 @@ export class Worker {
 
     private shouldStop : boolean
     private timeout: Timeout
+    readonly workerId: string
 
     constructor(params : {
         context : Context
@@ -24,6 +26,7 @@ export class Worker {
     }) {
         this.context = params.context
         this.channel = params.channel ?? DEFAULT_CHANNEL
+        this.workerId = randomUUID()
         this.pollSecs = params.pollSecs ?? defaultPollSecs
         this.shouldStop = false
         this.semaphore = new Semaphore(1)
@@ -89,6 +92,7 @@ export class Worker {
             this.context.handleEvent({
                 eventType: "WORKER_JOB_DEQUEUE",
                 jobId: row.id,
+                workerId: this.workerId,
                 jobName: row.name
             })
 
@@ -106,6 +110,7 @@ export class Worker {
                     this.context.handleEvent({
                         eventType: "WORKER_JOB_EXPIRE",
                         jobId: row.id,
+                        workerId: this.workerId,
                         jobName: row.name
                     })
                     continue
@@ -119,11 +124,13 @@ export class Worker {
                 this.context.handleEvent({
                     eventType: "WORKER_JOB_RUN",
                     jobId: row.id,
+                    workerId: this.workerId,
                     jobName: row.name
                 })
 
                 let isSuccess = true
                 let error: any = null
+                const startTime = Date.now()
 
                 try {
                     await jobDefinition.run(row.payload, { 
@@ -135,6 +142,8 @@ export class Worker {
                     isSuccess = false
                     error = err
                 }
+
+                const endTime = Date.now()
 
                 if(isSuccess) {
                     await database
@@ -149,7 +158,9 @@ export class Worker {
                     this.context.handleEvent({
                         eventType: "WORKER_JOB_RUN_SUCCESS",
                         jobId: row.id,
-                        jobName: row.name
+                        workerId: this.workerId,
+                        jobName: row.name,
+                        duration: endTime - startTime
                     })
                 } else {
                     await database
@@ -165,7 +176,9 @@ export class Worker {
                         eventType: "WORKER_JOB_RUN_FAILED",
                         jobId: row.id,
                         jobName: row.name,
+                        workerId: this.workerId,
                         error: error,
+                        duration: endTime - startTime
                     })
                 }
             } finally {
