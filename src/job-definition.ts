@@ -5,25 +5,24 @@ import { createKyselyWrapper } from "@src/database"
 
 type Metadata = {
     jobId : string
-    jobGroup : string
     markAsFailed : () => void
 }
 
 type EnqueueParams = {
-    jobGroup?: string
+    mutex?: string
+    deduplicationKey?: string
     delaySecs?: number
     timeoutSecs?: number
     numAttempts?: number
-    channel?: string
 }
 
-type JobFunction<T> = (params : T, metadata : Metadata) => Promise<void>
+type WorkFunction<T> = (params : T, metadata : Metadata) => Promise<void>
 
-type JobGroupGenerator<T> = (params : T) => string
+type KeyGenerator<T> = (params : T) => string
 
-export const DEFAULT_CHANNEL = "DEFAULT"
+export const DEFAULT_QUEUE = "DEFAULT"
 
-const defaultJobGroupGenerator = () => randomUUID()
+const defaultKeyGenerator = () => randomUUID()
 const defaultTimeoutSecs = 60 * 5
 const defaultNumAttempts = 1
 const defaultDelaySecs = 0
@@ -32,22 +31,24 @@ export class JobDefinition<T> {
     private readonly context : Context
 
     readonly name : string
-    readonly channel : string
+    readonly queue : string
     readonly repeatSecs : number | null
 
     readonly numAttempts : number
     readonly timeoutSecs : number
     readonly delaySecs : number
 
-    private readonly jobGroupGenerator : JobGroupGenerator<T>
-    private readonly workFunction : JobFunction<T>
+    private readonly mutex : KeyGenerator<T>
+    private readonly deduplicationKey : KeyGenerator<T>
+    private readonly work : WorkFunction<T>
 
     constructor(params : {
-        workFunction : JobFunction<T>,
-        jobGroupGenerator? : JobGroupGenerator<T>,
-        name : string,
-        channel? : string,
         context : Context,
+        work : WorkFunction<T>,
+        deduplicationKey? : KeyGenerator<T>,
+        mutex? : KeyGenerator<T>,
+        name : string,
+        queue? : string,
         numAttempts?: number
         delaySecs? : number
         repeatSecs? : T extends null ? (number | null) : null
@@ -55,9 +56,10 @@ export class JobDefinition<T> {
     }) {
         this.name = params.name
         this.context = params.context
-        this.workFunction = params.workFunction
-        this.jobGroupGenerator = params.jobGroupGenerator ?? defaultJobGroupGenerator
-        this.channel = params.channel ?? DEFAULT_CHANNEL
+        this.work = params.work
+        this.mutex = params.mutex ?? defaultKeyGenerator
+        this.deduplicationKey = params.deduplicationKey ?? defaultKeyGenerator
+        this.queue = params.queue ?? DEFAULT_QUEUE
         this.repeatSecs = params.repeatSecs ?? null
         this.numAttempts = params.numAttempts ?? defaultNumAttempts
         this.timeoutSecs = params.timeoutSecs ?? defaultTimeoutSecs
@@ -79,74 +81,116 @@ export class JobDefinition<T> {
         await database
             .insertInto("jobSchedule")
             .values({
-                id: this.name,
+                id: randomUUID(),
                 repeatSecs: repeatSecs,
+                name: this.name,
                 repeatedAt: new Date(0)
             }).onConflict(oc => oc
-                .column("id")
+                .column("name")
                 .doUpdateSet({ repeatSecs })
             )
             .execute()
     }
     
     async enqueue(payload : T, params? : EnqueueParams) : Promise<string> {
-        const jobGroup = params?.jobGroup ?? this.jobGroupGenerator(payload)
+        const mutex = params?.mutex ?? this.mutex(payload)
         const delaySecs = params?.delaySecs ?? this.delaySecs
         const timeoutSecs = params?.timeoutSecs ?? this.timeoutSecs
         const numAttempts = params?.numAttempts ?? this.numAttempts
-        const channel = params?.channel ?? this.channel
+        const deduplicationKey = params?.deduplicationKey ?? this.deduplicationKey(payload)
 
         const database = createKyselyWrapper({
             pool: this.context.pool,
             schema: this.context.schema
         })
 
-        return await database.transaction().execute(async (database) => {
-            await database
-                .insertInto("jobGroup")
+        const event = await database.transaction().execute(async (database) => {
+
+            const jobMutex = await database
+                .insertInto("jobMutex")
                 .values({
-                    id: jobGroup,
+                    id: randomUUID(),
+                    name: mutex,
+                    jobName: this.name,
+                    numReferencedJobs: 0,
+                    queue: this.queue,
+                    numActiveJobs: 0,
+                    status: "UNLOCKED",
+                    createdAt: sql<Date>`NOW()`,
                     unlockedAt: sql<Date>`NOW()`,
-                    numRefs: 1
+                    accessedAt: sql<Date>`NOW()`,
                 })
                 .onConflict(oc => oc
-                    .column("id")
-                    .doUpdateSet(eb => ({ 
-                        numRefs: eb(eb.ref("jobGroup.numRefs"), "+", 1) 
-                    }))
+                    .columns(["name", "jobName", "queue"])
+                    .doUpdateSet({ 
+                        name: mutex, 
+                        jobName: this.name, 
+                        queue: this.queue 
+                    })
                 )
-                .returning(["numRefs"])
-                .execute()
+                .returning(["id", "numReferencedJobs"])
+                .executeTakeFirstOrThrow()
 
-            const jobId = randomUUID()
-            await database
+            const newJobId = randomUUID()
+            const job = await database
                 .insertInto("job")
                 .values({
-                    id: jobId,
-                    jobGroupId: jobGroup,
+                    id: newJobId,
+                    jobMutexId: jobMutex.id,
                     name: this.name,
-                    channel: channel,
+                    queue: this.queue,
                     payload: JSON.stringify(payload),
                     numAttempts: numAttempts,
                     timeoutSecs: timeoutSecs,
-                    isSuccess: false,
-                    createdAt: sql`NOW()`,
-                    availableAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 second'`,
+                    deduplicationKey: deduplicationKey,
+                    createdAt: sql<Date>`NOW()`,
+                    unlockedAt: sql<Date>`NOW()`,
+                    releasedAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 SECOND'`,
+                    status: "WAITING"
                 })
-                .execute()
+                .onConflict(oc => oc
+                    .columns([
+                        "deduplicationKey",
+                        "name",
+                        "queue"
+                    ])
+                    .where("status", "=", "WAITING")
+                    .doUpdateSet({ 
+                        deduplicationKey,
+                        name: this.name,
+                        queue: this.queue,
+                    })
+                )
+                .returning(["id"])
+                .executeTakeFirstOrThrow()
 
-            this.context.handleEvent({
-                eventType: "JOB_DEFINITION_JOB_ENQUEUE",
-                jobId: jobId,
+            if(job.id === newJobId) {
+                await database
+                    .updateTable("jobMutex")
+                    .where("id", "=", jobMutex.id)
+                    .set({ numReferencedJobs: jobMutex.numReferencedJobs + 1 })
+                    .execute()
+
+                return {
+                    eventType: "JOB_DEFINITION_JOB_ENQUEUE" as const,
+                    jobId: job.id,
+                    jobName : this.name,
+                }
+            }
+
+            return {
+                eventType: "JOB_DEFINITION_JOB_DEDUPLICATE" as const,
+                jobId: job.id,
                 jobName : this.name,
-            })
-
-            return jobId
+            }
         })
+
+        this.context.handleEvent(event)
+        return event.jobId
     }
 
     run(payload : T, metadata : Metadata) {
-        return this.workFunction(payload, metadata)
+        return this.work(payload, metadata)
     }
 
 }

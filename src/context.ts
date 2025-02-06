@@ -9,7 +9,7 @@ const defaultJobGroupUnlockSecs = 60 * 60 * 2
 
 export class Context {
     readonly jobPostFinalizeDeleteSecs : number
-    readonly jobGroupUnlockSecs : number
+    readonly jobMutexUnlockSecs : number
     readonly schema : string
 
     readonly pool : Pool
@@ -25,7 +25,7 @@ export class Context {
         this.eventHandlers = []
         this.schema = params.schema
         this.pool = params.pool
-        this.jobGroupUnlockSecs = params.jobGroupUnlockSecs ?? defaultJobGroupUnlockSecs
+        this.jobMutexUnlockSecs = params.jobGroupUnlockSecs ?? defaultJobGroupUnlockSecs
         this.jobPostFinalizeDeleteSecs = params.jobPostFinalizeDeleteSecs ?? defaultJobPostFinalizeDeleteSecs
         this.jobDefinitions = {}
     }

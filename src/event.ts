@@ -4,6 +4,12 @@ export type JobDefinitionJobEnqueue = {
     jobName: string
 }
 
+export type JobDefinitionJobDeduplicate = {
+    eventType : "JOB_DEFINITION_JOB_DEDUPLICATE"
+    jobId: string
+    jobName: string
+}
+
 export type WorkerJobDequeue = {
     eventType : "WORKER_JOB_DEQUEUE"
     jobId: string
@@ -47,6 +53,18 @@ export type OrchestratorJobSchedule = {
     jobName : string,
 }
 
+export type OrchestratorJobRelease = {
+    eventType : "ORCHESTRATOR_JOB_RELEASE",
+    jobId: string
+    jobName: string
+}
+
+export type OrchestratorJobUnlock = {
+    eventType : "ORCHESTRATOR_JOB_UNLOCK",
+    jobId: string
+    jobName: string
+}
+
 export type OrchestratorJobDelete = {
     eventType : "ORCHESTRATOR_JOB_DELETE"
     jobId: string
@@ -54,10 +72,13 @@ export type OrchestratorJobDelete = {
 
 export type BearEvent = 
     | JobDefinitionJobEnqueue
+    | JobDefinitionJobDeduplicate
     | WorkerJobDequeue
     | WorkerJobExpire
     | WorkerJobRun
     | WorkerJobRunSuccess
     | WorkerJobRunFailed
     | OrchestratorJobSchedule
+    | OrchestratorJobUnlock
+    | OrchestratorJobRelease
     | OrchestratorJobDelete

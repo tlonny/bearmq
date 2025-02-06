@@ -9,6 +9,10 @@ export class Semaphore {
         this.queue = []
     }
 
+    getCount() {
+        return this.count
+    }
+
     async acquire() {
         if(this.count > 0) {
             this.count -= 1

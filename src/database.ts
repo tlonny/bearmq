@@ -4,36 +4,64 @@ import type { Pool } from "pg"
 
 type Timestamp = ColumnType<Date, Date, Date>
 
+export type JobStatus =
+    | "WAITING"
+    | "ACTIVE"
+    | "RUNNING"
+    | "LOCKED"
+
+export type MutexStatus =
+    | "UNLOCKED"
+    | "LOCKED"
+
 interface JobScheduleTable {
     id: string
+    name: string
     repeatSecs: number
     repeatedAt: Timestamp
 }
 
-interface JobGroupTable {
+interface JobMutexTable {
     id: string
+    name: string
+    jobName: string
+    queue: string
+    numReferencedJobs: number
+    numActiveJobs: number
+    status: MutexStatus
+    createdAt: Timestamp
+    accessedAt: Timestamp
     unlockedAt: Timestamp
-    numRefs: number
 }
 
 interface JobTable {
     id: string
-    jobGroupId: string
     name: string
-    channel: string
+    queue: string
+    jobMutexId: string
     payload: JSONColumnType<any>
-    numAttempts: number
+    deduplicationKey: string
     timeoutSecs: number
-    isSuccess: boolean
+    numAttempts: number
+    status: JobStatus
     createdAt: Timestamp
-    availableAt: Timestamp
-    finalizedAt: Timestamp | null
+    releasedAt: Timestamp
+    unlockedAt: Timestamp
+}
+
+interface FinalizedJobTable {
+    id: string
+    name: string
+    payload: JSONColumnType<any>
+    createdAt: Timestamp
+    isSuccess: boolean
 }
 
 export interface DB {
-    job: JobTable
-    jobGroup: JobGroupTable
     jobSchedule: JobScheduleTable
+    jobMutex: JobMutexTable
+    job: JobTable
+    finalizedJob: FinalizedJobTable
 }
 
 export const createKyselyWrapper = (params : {
