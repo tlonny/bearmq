@@ -1,6 +1,6 @@
 {
   "name": "bearmq",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "author": "tlonny",
   "main": "build/index.js",
   "types": "build/index.d.ts",
