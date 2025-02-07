@@ -22,10 +22,11 @@ type KeyGenerator<T> = (params : T) => string
 
 export const DEFAULT_QUEUE = "DEFAULT"
 
-const defaultKeyGenerator = () => randomUUID()
-const defaultTimeoutSecs = 60 * 5
-const defaultNumAttempts = 1
-const defaultDelaySecs = 0
+const DEFAULT_DEDUPLICATION_KEY = () => randomUUID()
+const DEFAULT_TIMEOUT_SECS = 60 * 5
+const DEFAULT_NUM_ATTEMPTS = 1
+const DEFAULT_DELAY_SECS = 0
+const DEFAULT_PRIORITY = 0
 
 export class JobDefinition<T> {
     private readonly context : Context
@@ -34,11 +35,11 @@ export class JobDefinition<T> {
     readonly queue : string
     readonly repeatSecs : number | null
 
+    readonly priority : number
     readonly numAttempts : number
     readonly timeoutSecs : number
     readonly delaySecs : number
 
-    private readonly mutex : KeyGenerator<T>
     private readonly deduplicationKey : KeyGenerator<T>
     private readonly work : WorkFunction<T>
 
@@ -46,7 +47,7 @@ export class JobDefinition<T> {
         context : Context,
         work : WorkFunction<T>,
         deduplicationKey? : KeyGenerator<T>,
-        mutex? : KeyGenerator<T>,
+        priority? : number,
         name : string,
         queue? : string,
         numAttempts?: number
@@ -57,13 +58,13 @@ export class JobDefinition<T> {
         this.name = params.name
         this.context = params.context
         this.work = params.work
-        this.mutex = params.mutex ?? defaultKeyGenerator
-        this.deduplicationKey = params.deduplicationKey ?? defaultKeyGenerator
+        this.deduplicationKey = params.deduplicationKey ?? DEFAULT_DEDUPLICATION_KEY
         this.queue = params.queue ?? DEFAULT_QUEUE
+        this.priority = params.priority ?? DEFAULT_PRIORITY
         this.repeatSecs = params.repeatSecs ?? null
-        this.numAttempts = params.numAttempts ?? defaultNumAttempts
-        this.timeoutSecs = params.timeoutSecs ?? defaultTimeoutSecs
-        this.delaySecs = params.delaySecs ?? defaultDelaySecs
+        this.numAttempts = params.numAttempts ?? DEFAULT_NUM_ATTEMPTS
+        this.timeoutSecs = params.timeoutSecs ?? DEFAULT_TIMEOUT_SECS
+        this.delaySecs = params.delaySecs ?? DEFAULT_DELAY_SECS
     }
 
     async register() {
@@ -93,7 +94,6 @@ export class JobDefinition<T> {
     }
     
     async enqueue(payload : T, params? : EnqueueParams) : Promise<string> {
-        const mutex = params?.mutex ?? this.mutex(payload)
         const delaySecs = params?.delaySecs ?? this.delaySecs
         const timeoutSecs = params?.timeoutSecs ?? this.timeoutSecs
         const numAttempts = params?.numAttempts ?? this.numAttempts
@@ -104,89 +104,49 @@ export class JobDefinition<T> {
             schema: this.context.schema
         })
 
-        const event = await database.transaction().execute(async (database) => {
+        const newJobId = randomUUID()
+        const job = await database
+            .insertInto("job")
+            .values({
+                id: newJobId,
+                name: this.name,
+                queue: this.queue,
+                priority: this.priority,
+                payload: JSON.stringify(payload),
+                numAttempts: numAttempts,
+                timeoutSecs: timeoutSecs,
+                deduplicationKey: deduplicationKey,
+                createdAt: sql<Date>`NOW()`,
+                unlockedAt: sql<Date>`NOW()`,
+                releasedAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 SECOND'`,
+                status: "WAITING"
+            })
+            .onConflict(oc => oc
+                .columns([
+                    "deduplicationKey",
+                    "name"
+                ])
+                .where("status", "=", "WAITING")
+                .doUpdateSet({ deduplicationKey, name: this.name })
+            )
+            .returning(["id"])
+            .executeTakeFirstOrThrow()
 
-            const jobMutex = await database
-                .insertInto("jobMutex")
-                .values({
-                    id: randomUUID(),
-                    name: mutex,
-                    jobName: this.name,
-                    numReferencedJobs: 0,
-                    queue: this.queue,
-                    numActiveJobs: 0,
-                    status: "UNLOCKED",
-                    createdAt: sql<Date>`NOW()`,
-                    unlockedAt: sql<Date>`NOW()`,
-                    accessedAt: sql<Date>`NOW()`,
-                })
-                .onConflict(oc => oc
-                    .columns(["name", "jobName", "queue"])
-                    .doUpdateSet({ 
-                        name: mutex, 
-                        jobName: this.name, 
-                        queue: this.queue 
-                    })
-                )
-                .returning(["id", "numReferencedJobs"])
-                .executeTakeFirstOrThrow()
-
-            const newJobId = randomUUID()
-            const job = await database
-                .insertInto("job")
-                .values({
-                    id: newJobId,
-                    jobMutexId: jobMutex.id,
-                    name: this.name,
-                    queue: this.queue,
-                    payload: JSON.stringify(payload),
-                    numAttempts: numAttempts,
-                    timeoutSecs: timeoutSecs,
-                    deduplicationKey: deduplicationKey,
-                    createdAt: sql<Date>`NOW()`,
-                    unlockedAt: sql<Date>`NOW()`,
-                    releasedAt: sql<Date>`NOW() + ${delaySecs} * INTERVAL '1 SECOND'`,
-                    status: "WAITING"
-                })
-                .onConflict(oc => oc
-                    .columns([
-                        "deduplicationKey",
-                        "name",
-                        "queue"
-                    ])
-                    .where("status", "=", "WAITING")
-                    .doUpdateSet({ 
-                        deduplicationKey,
-                        name: this.name,
-                        queue: this.queue,
-                    })
-                )
-                .returning(["id"])
-                .executeTakeFirstOrThrow()
-
-            if(job.id === newJobId) {
-                await database
-                    .updateTable("jobMutex")
-                    .where("id", "=", jobMutex.id)
-                    .set({ numReferencedJobs: jobMutex.numReferencedJobs + 1 })
-                    .execute()
-
-                return {
-                    eventType: "JOB_DEFINITION_JOB_ENQUEUE" as const,
-                    jobId: job.id,
-                    jobName : this.name,
-                }
-            }
-
-            return {
+        if(job.id === newJobId) {
+            this.context.handleEvent({
+                eventType: "JOB_DEFINITION_JOB_ENQUEUE" as const,
+                jobId: job.id,
+                jobName : this.name,
+            })
+        } else {
+            this.context.handleEvent({
                 eventType: "JOB_DEFINITION_JOB_DEDUPLICATE" as const,
                 jobId: job.id,
                 jobName : this.name,
-            }
-        })
+            })
+        }
 
-        this.context.handleEvent(event)
-        return event.jobId
+        return job.id
     }
 
     run(payload : T, metadata : Metadata) {

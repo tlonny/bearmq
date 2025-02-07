@@ -11,26 +11,11 @@ export const generateMigrationSql = (schema : string) : string[] => {
         `,
 
         `
-            CREATE TABLE IF NOT EXISTS "${escapedSchema}"."job_mutex" (
-                "id" UUID PRIMARY KEY,
-                "name" TEXT NOT NULL,
-                "job_name" TEXT NOT NULL,
-                "queue" TEXT NOT NULL,
-                "num_referenced_jobs" INTEGER NOT NULL,
-                "num_active_jobs" INTEGER NOT NULL,
-                "status" TEXT NOT NULL,
-                "created_at" TIMESTAMP NOT NULL,
-                "accessed_at" TIMESTAMP NOT NULL,
-                "unlocked_at" TIMESTAMP NOT NULL
-            )
-        `,
-
-        `
             CREATE TABLE IF NOT EXISTS "${escapedSchema}"."job" (
                 "id" UUID PRIMARY KEY,
                 "name" TEXT NOT NULL,
                 "queue" TEXT NOT NULL,
-                "job_mutex_id" UUID NOT NULL,
+                "priority" INTEGER NOT NULL,
                 "payload" JSON NOT NULL,
                 "deduplication_key" TEXT NOT NULL,
                 "timeout_secs" INTEGER NOT NULL,
@@ -38,8 +23,7 @@ export const generateMigrationSql = (schema : string) : string[] => {
                 "status" TEXT NOT NULL,
                 "created_at" TIMESTAMP NOT NULL,
                 "released_at" TIMESTAMP NOT NULL,
-                "unlocked_at" TIMESTAMP NOT NULL,
-                FOREIGN KEY ("job_mutex_id") REFERENCES "${escapedSchema}"."job_mutex" ("id")
+                "unlocked_at" TIMESTAMP NOT NULL
             )
         `,
 
@@ -62,26 +46,14 @@ export const generateMigrationSql = (schema : string) : string[] => {
 
         `
             CREATE UNIQUE INDEX IF NOT EXISTS 
-            "job_mutex_lookup_uidx" ON "${escapedSchema}"."job_mutex" (
-                "queue",
-                "job_name",
-                "name"
+            "job_schedule_schedule_idx" ON "${escapedSchema}"."job_schedule" (
+                "repeated_at" ASC
             )
-        `,
-
-        `
-            CREATE INDEX IF NOT EXISTS
-            "job_mutex_poll_idx" ON "${escapedSchema}"."job_mutex" (
-                "queue",
-                "job_name",
-                "accessed_at"
-            ) WHERE ("num_active_jobs" > 0 AND "status" = 'UNLOCKED')
         `,
 
         `
             CREATE UNIQUE INDEX IF NOT EXISTS
             "job_dedupe_uidx" ON "${escapedSchema}"."job" (
-                "queue",
                 "name",
                 "deduplication_key"
             ) WHERE ("status" = 'WAITING')
@@ -90,22 +62,23 @@ export const generateMigrationSql = (schema : string) : string[] => {
         `
             CREATE INDEX IF NOT EXISTS
             "job_release_idx" ON "${escapedSchema}"."job" (
-                "released_at"
+                "released_at" ASC
             ) WHERE ("status" = 'WAITING')
         `,
 
         `
             CREATE INDEX IF NOT EXISTS
             "job_unlock_idx" ON "${escapedSchema}"."job" (
-                "unlocked_at"
+                "unlocked_at" ASC
             ) WHERE ("status" = 'LOCKED')
         `,
 
         `
             CREATE INDEX IF NOT EXISTS
-            "job_poll_idx" ON "${escapedSchema}"."job" (
-                "job_mutex_id",
-                "released_at"
+            "job_dequeue_idx" ON "${escapedSchema}"."job" (
+                "queue",
+                "priority" DESC,
+                "released_at" ASC
             ) WHERE ("status" = 'ACTIVE')
         `,
     ]

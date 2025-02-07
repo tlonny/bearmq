@@ -4,20 +4,25 @@ import { Timeout } from "@src/core/timeout"
 import { createKyselyWrapper } from "@src/database"
 import { sql } from "kysely"
 
+type JobDetails = { id : string, name : string }
+
 export class JobUnlockModule {
     private readonly directory : OrchestratorDirectory
     private readonly pollSecs: number
     private readonly promise : Promise<void>
     private readonly semaphore : Semaphore
+    private readonly batchSize : number
 
     private timeout : Timeout
     private shouldStop : boolean
 
     constructor(directory : OrchestratorDirectory, params : {
         pollSecs : number
+        batchSize : number
     }) {
         this.directory = directory
         this.pollSecs = params.pollSecs
+        this.batchSize = params.batchSize
         this.semaphore = new Semaphore(1)
         this.shouldStop = false
         this.timeout = new Timeout(() => this.semaphore.release())
@@ -32,58 +37,45 @@ export class JobUnlockModule {
         })
 
         while(!this.shouldStop) {
-            const lockedJob = await database.transaction().execute(async (database) => {
-                const lockedJob = await database
+            const lockedJobs : JobDetails[] = await database.transaction().execute(async (database) => {
+                const lockedJobs = await database
                     .selectFrom("job")
-                    .select(["id", "name", "jobMutexId"])
+                    .select(["id", "name"])
                     .where("status", "=", "LOCKED")
                     .where("unlockedAt", "<=", sql<Date>`NOW()`)
                     .orderBy("unlockedAt")
+                    .limit(this.batchSize)
                     .forUpdate()
                     .skipLocked()
-                    .limit(1)
-                    .executeTakeFirst()
+                    .execute()
 
-                if(!lockedJob) {
-                    return null
+                if(lockedJobs.length === 0) {
+                    return []
                 }
 
-                const jobMutex = await database
-                    .selectFrom("jobMutex")
-                    .where("id", "=", lockedJob.jobMutexId)
-                    .select(["id", "numActiveJobs"])
-                    .forUpdate()
-                    .executeTakeFirstOrThrow()
-
+                const jobIds = lockedJobs.map(j => j.id)
                 await database
                     .updateTable("job")
-                    .where("id", "=", lockedJob.id)
+                    .where("id", "in", jobIds)
                     .set({ status: "ACTIVE" })
                     .execute()
 
-                await database
-                    .updateTable("jobMutex")
-                    .where("id", "=", lockedJob.jobMutexId)
-                    .set({ numActiveJobs: jobMutex.numActiveJobs + 1 })
-                    .execute()
-
-                return {
-                    id: lockedJob.id,
-                    name: lockedJob.name
-                }
+                return lockedJobs
             })
 
-            if(!lockedJob) {
+            if(lockedJobs.length === 0) {
                 this.timeout.set(this.pollSecs * 1000)
                 await this.semaphore.acquire()
                 continue
             }
 
-            context.handleEvent({
-                eventType: "ORCHESTRATOR_JOB_UNLOCK",
-                jobId: lockedJob.id,
-                jobName: lockedJob.name
-            })
+            for(const job of lockedJobs) {
+                context.handleEvent({
+                    eventType: "ORCHESTRATOR_JOB_UNLOCK",
+                    jobId: job.id,
+                    jobName: job.name
+                })
+            }
         }
     }
 

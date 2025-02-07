@@ -16,7 +16,7 @@ export class JobExecutionModule {
     }
 
     private async process() {
-        const jobPollModule = this.directory.getPollModule()
+        const jobDequeueModule = this.directory.getDequeueModule()
         const jobFinalizeModule = this.directory.getFinalizeModule()
         const context = this.directory.getContext()
         const workerId = this.directory.getWorkerId()
@@ -27,95 +27,79 @@ export class JobExecutionModule {
         })
 
         while(!this.shouldStop) {
-            const job = await jobPollModule.poll()
+            const job = await jobDequeueModule.dequeue()
 
             if(!job) {
                 continue
             }
 
+            const jobDefinition = await context.getJobDefinition(job.name)
+            if(!jobDefinition) {
+                throw new Error(`Job definition not found: ${job.name}`)
+            }
+
+            if(job.numAttempts <= 0) {
+                await jobFinalizeModule.finalize(job, { isSuccess: false })
+                context.handleEvent({
+                    eventType: "WORKER_JOB_EXPIRE",
+                    jobId: job.id,
+                    workerId: workerId,
+                    jobName: job.name
+                })
+                continue
+            }
+
+            context.handleEvent({
+                eventType: "WORKER_JOB_RUN",
+                jobId: job.id,
+                workerId: workerId,
+                jobName: job.name
+            })
+
+            let isSuccess = true
+            let error: any = null
+            const startTime = Date.now()
+
             try {
+                await jobDefinition.run(job.payload, { 
+                    jobId: job.id, 
+                    markAsFailed: () => { isSuccess = false }
+                })
+            } catch (err) {
+                isSuccess = false
+                error = err
+            }
+
+            const endTime = Date.now()
+
+            if(isSuccess) {
+                await jobFinalizeModule.finalize(job, { isSuccess: false })
                 context.handleEvent({
-                    eventType: "WORKER_JOB_DEQUEUE",
+                    eventType: "WORKER_JOB_RUN_SUCCESS",
                     jobId: job.id,
                     workerId: workerId,
-                    jobName: job.name
+                    jobName: job.name,
+                    duration: endTime - startTime
                 })
-
-                const jobDefinition = await context.getJobDefinition(job.name)
-
-                if(job.numAttempts <= 0 || !jobDefinition) {
-                    await jobFinalizeModule.finalize(job, { isSuccess: false })
-                    context.handleEvent({
-                        eventType: "WORKER_JOB_EXPIRE",
-                        jobId: job.id,
-                        workerId: workerId,
-                        jobName: job.name
-                    })
-                    continue
-                }
-
-                context.handleEvent({
-                    eventType: "WORKER_JOB_RUN",
-                    jobId: job.id,
-                    workerId: workerId,
-                    jobName: job.name
-                })
-
-                let isSuccess = true
-                let error: any = null
-                const startTime = Date.now()
-
-                try {
-                    await jobDefinition.run(job.payload, { 
-                        jobId: job.id, 
-                        markAsFailed: () => { isSuccess = false }
-                    })
-                } catch (err) {
-                    isSuccess = false
-                    error = err
-                }
-
-                const endTime = Date.now()
-
-                if(isSuccess) {
-                    await jobFinalizeModule.finalize(job, { isSuccess: false })
-                    context.handleEvent({
-                        eventType: "WORKER_JOB_RUN_SUCCESS",
-                        jobId: job.id,
-                        workerId: workerId,
-                        jobName: job.name,
-                        duration: endTime - startTime
-                    })
-                } else {
-                    await database
-                        .updateTable("job")
-                        .where("id", "=", job.id)
-                        .set({ 
-                            "numAttempts": job.numAttempts - 1,
-                            "unlockedAt": sql<Date>`NOW() + ${job.timeoutSecs} * INTERVAL '1 SECOND'`,
-                            "status": "LOCKED"
-                        })
-                        .execute()
-            
-                    context.handleEvent({
-                        eventType: "WORKER_JOB_RUN_FAILED",
-                        jobId: job.id,
-                        jobName: job.name,
-                        workerId: workerId,
-                        error: error,
-                        duration: endTime - startTime
-                    })
-                }
-
-
-            } finally {
+            } else {
                 await database
-                    .updateTable("jobMutex")
-                    .where("id", "=", job.jobMutexId)
-                    .set({ "status": "UNLOCKED" })
+                    .updateTable("job")
+                    .where("id", "=", job.id)
+                    .set({ 
+                        "numAttempts": job.numAttempts - 1,
+                        "unlockedAt": sql<Date>`NOW() + ${job.timeoutSecs} * INTERVAL '1 SECOND'`,
+                        "status": "LOCKED"
+                    })
                     .execute()
-
-                jobPollModule.reset()
+            
+                context.handleEvent({
+                    eventType: "WORKER_JOB_RUN_FAILED",
+                    jobId: job.id,
+                    jobName: job.name,
+                    workerId: workerId,
+                    error: error,
+                    duration: endTime - startTime
+                })
             }
         }
     }

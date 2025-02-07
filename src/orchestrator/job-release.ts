@@ -3,10 +3,13 @@ import { Semaphore } from "@src/core/semaphore"
 import { Timeout } from "@src/core/timeout"
 import { createKyselyWrapper } from "@src/database"
 
+type JobDetails = { id: string, name: string }
+
 export class JobReleaseModule {
     private readonly directory : OrchestratorDirectory
     private readonly pollSecs: number
     private readonly promise : Promise<void>
+    private readonly batchSize : number
     private readonly semaphore : Semaphore
 
     private timeout : Timeout
@@ -14,9 +17,11 @@ export class JobReleaseModule {
 
     constructor(directory : OrchestratorDirectory, params : {
         pollSecs : number
+        batchSize : number
     }) {
         this.directory = directory
         this.pollSecs = params.pollSecs
+        this.batchSize = params.batchSize
         this.semaphore = new Semaphore(1)
         this.shouldStop = false
         this.timeout = new Timeout(() => this.semaphore.release())
@@ -31,57 +36,44 @@ export class JobReleaseModule {
         })
 
         while(!this.shouldStop) {
-            const releasedJob = await database.transaction().execute(async (database) => {
-                const waitingJob = await database
+            const releasedJobs : JobDetails[] = await database.transaction().execute(async (database) => {
+                const waitingJobs = await database
                     .selectFrom("job")
-                    .select(["id", "name", "jobMutexId"])
+                    .select(["id", "name"])
                     .where("status", "=", "WAITING")
                     .orderBy("releasedAt")
                     .forUpdate()
                     .skipLocked()
-                    .limit(1)
-                    .executeTakeFirst()
+                    .limit(this.batchSize)
+                    .execute()
 
-                if(!waitingJob) {
-                    return null
+                if(waitingJobs.length === 0) {
+                    return []
                 }
 
-                const jobMutex = await database
-                    .selectFrom("jobMutex")
-                    .where("id", "=", waitingJob.jobMutexId)
-                    .select(["id", "numActiveJobs"])
-                    .forUpdate()
-                    .executeTakeFirstOrThrow()
-
+                const jobIds = waitingJobs.map(j => j.id)
                 await database
                     .updateTable("job")
-                    .where("id", "=", waitingJob.id)
+                    .where("id", "in", jobIds)
                     .set({ status: "ACTIVE" })
                     .execute()
 
-                await database
-                    .updateTable("jobMutex")
-                    .where("id", "=", waitingJob.jobMutexId)
-                    .set({ numActiveJobs: jobMutex.numActiveJobs + 1 })
-                    .execute()
-
-                return {
-                    id: waitingJob.id,
-                    name: waitingJob.name
-                }
+                return waitingJobs
             })
 
-            if(!releasedJob) {
+            if(releasedJobs.length === 0) {
                 this.timeout.set(this.pollSecs * 1000)
                 await this.semaphore.acquire()
                 continue
             }
 
-            context.handleEvent({
-                eventType: "ORCHESTRATOR_JOB_RELEASE",
-                jobId: releasedJob.id,
-                jobName: releasedJob.name
-            })
+            for(const job of releasedJobs) {
+                context.handleEvent({
+                    eventType: "ORCHESTRATOR_JOB_RELEASE",
+                    jobId: job.id,
+                    jobName: job.name
+                })
+            }
         }
     }
 

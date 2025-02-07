@@ -19,31 +19,11 @@ export class JobFinalizeModule {
         })
 
         await database.transaction().execute(async database => {
-            const jobMutex = await database
-                .selectFrom("jobMutex")
-                .where("id", "=", job.jobMutexId)
-                .select(["id", "numReferencedJobs"])
-                .forUpdate()
-                .executeTakeFirstOrThrow()
-
             await database
                 .deleteFrom("job")
                 .where("id", "=", job.id)
                 .returning(["id", "name", "payload"])
                 .execute()
-
-            if(jobMutex.numReferencedJobs <= 1) {
-                await database
-                    .deleteFrom("jobMutex")
-                    .where("id", "=", jobMutex.id)
-                    .execute()
-            } else {
-                await database
-                    .updateTable("jobMutex")
-                    .where("id", "=", jobMutex.id)
-                    .set({ "numReferencedJobs": jobMutex.numReferencedJobs - 1 })
-                    .execute()
-            }
 
             await database
                 .insertInto("finalizedJob")

@@ -1,11 +1,10 @@
 import type { Context } from "@src/context"
 import type { JobFinalizeModule } from "@src/worker/finalize"
-import type { JobPollModule } from "@src/worker/poll"
+import type { JobDequeueModule } from "@src/worker/dequeue"
 
 export interface WorkerDirectory {
     getContext() : Context
-    getConcurrency() : number
     getFinalizeModule() : JobFinalizeModule
-    getPollModule() : JobPollModule
+    getDequeueModule() : JobDequeueModule
     getWorkerId() : string
 }
