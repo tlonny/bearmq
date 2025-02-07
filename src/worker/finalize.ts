@@ -31,7 +31,7 @@ export class JobFinalizeModule {
                     id: job.id,
                     name: job.name,
                     isSuccess: params.isSuccess,
-                    payload: job.payload,
+                    payload: JSON.stringify(job.payload),
                     createdAt: sql`NOW()`
                 })
                 .execute()
